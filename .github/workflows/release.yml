@@ -75,7 +75,6 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
         run: |
           set -euo pipefail
           docker build --tag "${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_VERSION}" .
@@ -93,7 +92,6 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'orderflow-production-cluster' }}
-      RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'orderflow' }}
     steps:
       - name: Checkout code
