@@ -1,3 +1,9 @@
-approvedBy: 
-reviewDate: 
-releaseManager: 
+release: v2.3.0
+environment: production
+approvalStatus: required
+approvalGate: GitHub Actions protected environment
+requiredReviewers:
+  - engineering-manager
+  - operations-on-call
+releaseManager: release-engineer
+approvalEvidence: GitHub environment approval recorded on the deployment run

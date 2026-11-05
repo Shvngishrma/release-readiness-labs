@@ -1,5 +1,19 @@
-status: unknown
+status: ready
 environment: production
-version: latest
-approval: pending
-rollback: none
+version: v2.3.0
+approval: protected-environment-required
+rollback: automated-supported
+target_version: v2.2.0
+verification: passed
+readinessDate: "2026-11-05"
+deploymentRisk: low
+pipelineOrder: corrected-test-before-deploy
+secretSanitization: verified-no-hardcoded-secrets
+deploymentStrategy: rolling-update
+infrastructure: aws-eks-managed-kubernetes
+artifact: ECR image tagged v2.3.0
+validationSummary:
+  syntaxCheck: passed
+  unitTests: passed
+  imageBuild: required
+  kubernetesHealthProbes: configured
