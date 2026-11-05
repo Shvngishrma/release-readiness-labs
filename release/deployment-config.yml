@@ -1,7 +1,24 @@
 environment: production
-image_tag: production-build
+application: orderflow
+release_version: v2.3.0
+image_tag: v2.3.0
+image_repository: ECR_ORDERFLOW_REPOSITORY
+port: 3000
+replicas: 3
+health_endpoint: /health
 secrets:
-  API_KEY: ${API_KEY}
-  DATABASE_PASSWORD: password123
-  TOKEN: abcd1234
-  AWS_SECRET: test-secret
+  source: kubernetes-secret
+  name: lab-app-secrets
+  keys:
+    - API_KEY
+    - DATABASE_PASSWORD
+security:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  secretSource: Kubernetes Secret populated by the approved secret manager
+approval:
+  environment: production
+  requiredReviewers:
+    - engineering-manager
+    - operations-on-call

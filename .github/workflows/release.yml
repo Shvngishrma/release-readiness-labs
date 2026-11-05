@@ -4,30 +4,115 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Immutable release tag to deploy
+        required: true
+        default: v2.3.0
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  RELEASE_VERSION: ${{ inputs.release_version || 'v2.3.0' }}
 
 jobs:
-  deploy-production:
+  validate-release:
+    name: Validate and test application
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Deploy to Production
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm ci --prefix app
+
+      - name: Check JavaScript syntax
+        run: node --check app/server.js
+
+      - name: Run unit tests
+        run: npm test --prefix app
+
+  build-image:
+    name: Build container image
+    runs-on: ubuntu-latest
+    needs: validate-release
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'orderflow' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build image for pull request validation
+        if: github.event_name == 'pull_request'
+        run: docker build --tag lab-app:validation .
+
+      - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Authenticate Docker to Amazon ECR
+        if: github.event_name != 'pull_request'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push immutable image
+        if: github.event_name != 'pull_request'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          docker build --tag "${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_VERSION}" .
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_VERSION}"
+
+  deploy-production:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    environment:
+      name: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'orderflow-production-cluster' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'orderflow' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Configure kubectl for EKS
+        run: aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}"
+
+      - name: Authenticate Docker to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to production
+        env:
+          IMAGE_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
         run: |
           chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh
-
-  validate-release:
-    runs-on: ubuntu-latest
-    needs: deploy-production
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Run Tests
-        run: |
-          echo "Running validation tests..."
-          npm install --prefix app
-          npm test --prefix app
-          echo "Validation complete - some tests failed because deployment config has errors"
-          exit 1
+          ./scripts/deploy.sh "${RELEASE_VERSION}"
